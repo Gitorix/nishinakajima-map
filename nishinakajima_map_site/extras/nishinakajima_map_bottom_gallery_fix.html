@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>西中島南方 マップ（下部ギャラリー連動・修正版）</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+  :root { --bar-h: 160px; }
+  html, body { height: 100%; margin: 0; }
+  #map { position: absolute; inset: 0; }
+  .bottom-gallery {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: var(--bar-h);
+    background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.98));
+    border-top-left-radius: 16px; border-top-right-radius: 16px;
+    box-shadow: 0 -6px 20px rgba(0,0,0,0.15);
+    display: flex; flex-direction: column;
+    backdrop-filter: blur(4px);
+    z-index: 900;
+  }
+  .bar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px 4px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+  }
+  .handle { width: 40px; height: 4px; border-radius: 2px; background: #ccc; margin: 6px auto 4px; }
+  .scroller {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 58%;
+    overflow-x: auto; gap: 12px; padding: 8px 12px 14px;
+    -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory;
+  }
+  @media (min-width: 680px) { .scroller { grid-auto-columns: 260px; } }
+  .card {
+    scroll-snap-align: start; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); background: #fff;
+    display: grid; grid-template-rows: auto 1fr; min-width: 220px; position: relative;
+  }
+  .thumb { width: 100%; height: 110px; object-fit: cover; }
+  .meta { padding: 8px 10px 10px; display: grid; gap: 6px; }
+  .title { font-weight: 700; font-size: 14px; line-height: 1.2; }
+  .sub { font-size: 12px; color: #666; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn { flex: 1; font-size: 13px; padding: 8px 10px; border-radius: 10px; border: 1px solid #ddd; background: #f9f9f9; }
+  .btn.primary { background: #111; color: #fff; border-color: #111; }
+  .emoji-marker {
+    background: #fff; border: 2px solid #333; border-radius: 16px;
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; line-height: 32px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .pulse { width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(0, 153, 255, 0.4); box-shadow: 0 0 0 rgba(0, 153, 255, 0.6); animation: pulse 1.2s ease-out 2; }
+  @keyframes pulse {
+    0% { transform: scale(0.5); opacity: 0.8; }
+    70% { transform: scale(2.2); opacity: 0.2; }
+    100% { transform: scale(2.8); opacity: 0; }
+  }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bar-h) + 8px);
+    background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; z-index: 1000; display: none; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="toast" id="toast">アイコンをハイライトしました</div>
+
+<div class="bottom-gallery" id="gallery">
+  <div class="handle" id="toggleHandle"></div>
+  <div class="bar-header">
+    <div style="font-weight:700">看板メニュー（タップで地図に反映）</div>
+    <button id="collapseBtn" class="btn" style="width:auto; padding:6px 10px">隠す</button>
+  </div>
+  <div class="scroller" id="scroller"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  const places = [{"id": "issho", "name": "板前焼肉 一笑 西中島", "lat": 34.728318, "lng": 135.500197, "genre": "焼肉", "homepage": "https://k726002.gorp.jp/", "comment": "和牛中心。上塩タン・特上ロース・特選ハラミが評判。", "img": "https://images.unsplash.com/photo-1617195737496-7eafc7870a8a?q=80&w=800&auto=format&fit=crop"}, {"id": "kisshan", "name": "肉處 きっしゃん 西中島総本店", "lat": 34.726623, "lng": 135.500157, "genre": "焼肉", "homepage": "https://mjybeef.com/sohonten/", "comment": "A5佐賀牛を中心に厚切りタンや“すきやきロース”が名物。", "img": "https://images.unsplash.com/photo-1553532435-93d532a45f51?q=80&w=800&auto=format&fit=crop"}, {"id": "icchou", "name": "七輪焼鳥 一鳥 西中島店", "lat": 34.726148, "lng": 135.500025, "genre": "焼き鳥", "homepage": "https://nishinakajima.yakitori-icchou.com/", "comment": "炭火焼きの王道。皮・せせり・ヤゲンなど串が充実。", "img": "https://images.unsplash.com/photo-1603252109303-2751441dd157?q=80&w=800&auto=format&fit=crop"}, {"id": "ennoba", "name": "備長炭焼き鳥 えんのば 西中島店", "lat": 34.726278, "lng": 135.49906, "genre": "焼き鳥", "homepage": "https://tabelog.com/osaka/A2701/A270301/27137141/", "comment": "備長炭の串と地鶏もも炭火焼。〆の鶏だし茶漬けや鶏白湯も◎", "img": "https://images.unsplash.com/photo-1674674538250-814990a21f5c?q=80&w=800&auto=format&fit=crop"}, {"id": "arigatayaa", "name": "下町居酒屋 ありがたやぁ〜", "lat": 34.726724, "lng": 135.499319, "genre": "居酒屋", "homepage": "https://arigatayaa.foodre.jp/", "comment": "鶏お造りが看板。“昭和のかしわ揚げ”“ちりとりホルモン”も人気。", "img": "https://images.unsplash.com/photo-1553621042-f6e147245754?q=80&w=800&auto=format&fit=crop"}, {"id": "uogura", "name": "酒スタンド 魚蔵 西中島3丁目店", "lat": 34.725921, "lng": 135.498952, "genre": "立ち飲み", "homepage": "https://kc8d206.gorp.jp/", "comment": "立ち飲み海鮮。刺身5種盛など鮮魚メニューが看板。", "img": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?q=80&w=800&auto=format&fit=crop"}, {"id": "kinjishi", "name": "立喰酒場 金獅子 西中島南方店", "lat": 34.72651, "lng": 135.497686, "genre": "立ち飲み", "homepage": "https://tabelog.com/osaka/A2701/A270301/27067834/", "comment": "日替わりの魚介や一品が楽しい立ち飲み。“ビフテキ”も人気。", "img": "https://images.unsplash.com/photo-1569084072447-3e452ad4a1a5?q=80&w=800&auto=format&fit=crop"}, {"id": "bonkuraya", "name": "やきやき鉄板 ぼんくら家 西中島店", "lat": 34.726704, "lng": 135.499248, "genre": "鉄板/お好み焼き", "homepage": "https://c770939.gorp.jp/", "comment": "名物“牛すじコンそばめし”。粉もん＆鉄板つまみが豊富。", "img": "https://images.unsplash.com/photo-1604908554036-8e47abd3823d?q=80&w=800&auto=format&fit=crop"}, {"id": "kazu", "name": "ねぎ焼・お好み焼き 和（かず）", "lat": 34.725893, "lng": 135.499686, "genre": "鉄板/お好み焼き", "homepage": "https://tabelog.com/osaka/A2701/A270301/27018403/", "comment": "醤油味の“すじねぎ焼”が名物。重ね焼きスタイルで香ばしい。", "img": "https://images.unsplash.com/photo-1625948483852-8e6b18423512?q=80&w=800&auto=format&fit=crop"}, {"id": "sugidama", "name": "鮨・酒・肴 杉玉 西中島南方", "lat": 34.725894, "lng": 135.499717, "genre": "寿司", "homepage": "https://www.sugidama-sushiizakaya.jp/shop/505/", "comment": "“雲丹といくらのこぼれ軍艦”など映え＆コスパ鮨。", "img": "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=800&auto=format&fit=crop"}, {"id": "yagura", "name": "やぐら寿し", "lat": 34.725468, "lng": 135.499528, "genre": "寿司", "homepage": "https://www.yagurasushi.com/", "comment": "昭和39年創業の町寿司。にぎり盛りや箱寿司でしっかり。", "img": "https://images.unsplash.com/photo-1625948552406-30f938a713b7?q=80&w=800&auto=format&fit=crop"}, {"id": "jinrui", "name": "人類みな麺類", "lat": 34.72551, "lng": 135.499043, "genre": "ラーメン", "homepage": "https://www.jinrui-minamenrui.com/", "comment": "“原点 / micro / macro”の三本柱。macroは貝系で一番人気。", "img": "https://images.unsplash.com/photo-1557872943-16a5ac26437b?q=80&w=800&auto=format&fit=crop"}, {"id": "hanamichi", "name": "麺匠 はなみち 新大阪店", "lat": 34.727637, "lng": 135.497114, "genre": "ラーメン", "homepage": "https://menshohanamichi.jp/free/shinosaka", "comment": "濃厚豚骨しょうゆ“特上しょうゆ”や味噌が定番。深夜5時まで。", "img": "https://images.unsplash.com/photo-1604908177079-0c3fae48005c?q=80&w=800&auto=format&fit=crop"}, {"id": "stinger", "name": "Public Bar STINGER（5F）", "lat": 34.725868, "lng": 135.499013, "genre": "バー", "homepage": "https://stinger2017.jp/", "comment": "英国パブ。フィッシュ＆チップス、ローストビーフ、スティールダーツ常設。", "img": "https://images.unsplash.com/photo-1500644970114-4ff3c3dfb61f?q=80&w=800&auto=format&fit=crop"}];
+  const genreEmojis = {"焼肉": "🥩", "焼き鳥": "🍢", "居酒屋": "🍶", "立ち飲み": "🍺", "鉄板/お好み焼き": "🔥", "寿司": "🍣", "ラーメン": "🍜", "バー": "🍸"};
+  const map = L.map('map').setView([34.726, 135.4993], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+
+  const markers = new Map();
+  const layersByGenre = {};
+
+  function iconForGenre(g) {
+    const emoji = genreEmojis[g] || "📍";
+    return L.divIcon({
+      html: `<div class="emoji-marker">${emoji}</div>`,
+      className: '', iconSize: [32,32], iconAnchor: [16,16], popupAnchor: [0,-16]
+    });
+  }
+
+  for (const p of places) {
+    if (!layersByGenre[p.genre]) layersByGenre[p.genre] = L.layerGroup().addTo(map);
+    const marker = L.marker([p.lat, p.lng], { icon: iconForGenre(p.genre), title: p.name });
+    marker.bindPopup(`
+      <div style="min-width:220px">
+        <div style="font-weight:700; margin-bottom:4px;">${p.name}</div>
+        <div style="color:#555; margin-bottom:6px;">ジャンル：${p.genre}</div>
+        <div style="margin-bottom:6px;">${p.comment}</div>
+        <a href="${p.homepage}" target="_blank" rel="noopener">公式/情報ページを開く</a>
+      </div>`);
+    marker.addTo(layersByGenre[p.genre]);
+    markers.set(p.id, marker);
+  }
+
+  function pulseAt(lat, lng) {
+    const pulseIcon = L.divIcon({ html: '<div class="pulse"></div>', className: '', iconSize: [20,20], iconAnchor: [10,10] });
+    const temp = L.marker([lat, lng], { icon: pulseIcon, interactive: false }).addTo(map);
+    setTimeout(() => map.removeLayer(temp), 2200);
+  }
+
+  function showToast() {
+    const t = document.getElementById('toast');
+    t.style.display = 'block';
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(() => t.style.display = 'none', 1300);
+  }
+
+  function focusPlace(id) {
+    const p = places.find(x => x.id === id);
+    if (!p) return;
+    const marker = markers.get(id);
+    const offsetY = window.innerHeight * 0.18;
+    map.flyTo([p.lat, p.lng], 17, { duration: 0.6 });
+    setTimeout(() => { marker.openPopup(); map.panBy([0, -offsetY], { animate: true }); pulseAt(p.lat, p.lng); showToast(); }, 620);
+  }
+
+  const scroller = document.getElementById('scroller');
+  for (const p of places) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <img class="thumb" src="${p.img}" alt="${p.name}の看板メニュー写真" loading="lazy">
+      <div class="meta">
+        <div class="title">${p.name}</div>
+        <div class="sub">${p.genre} ｜ かんたん位置表示</div>
+        <div class="btn-row">
+          <button class="btn primary" data-id="${p.id}">地図で見る</button>
+          <a class="btn" href="${p.homepage}" target="_blank" rel="noopener">公式</a>
+        </div>
+      </div>`;
+    card.querySelector('button[data-id]').addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-id');
+      focusPlace(id);
+    });
+    card.querySelector('.thumb').addEventListener('click', () => focusPlace(p.id));
+    scroller.appendChild(card);
+  }
+
+  // Collapsible
+  const gallery = document.getElementById('gallery');
+  const collapseBtn = document.getElementById('collapseBtn');
+  const toggleHandle = document.getElementById('toggleHandle');
+  let collapsed = false;
+  function setCollapsed(state) {
+    collapsed = state;
+    if (collapsed) {
+      gallery.style.transform = 'translateY(calc(var(--bar-h) - 24px))';
+      collapseBtn.textContent = '開く';
+    } else {
+      gallery.style.transform = 'translateY(0)';
+      collapseBtn.textContent = '隠す';
+    }
+  }
+  collapseBtn.addEventListener('click', () => setCollapsed(!collapsed));
+  toggleHandle.addEventListener('click', () => setCollapsed(!collapsed));
+</script>
+</body>
+</html>

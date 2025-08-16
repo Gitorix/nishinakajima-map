@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>西中島南方 徒歩圏マップ（ジャンル別アイコン版）</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+
+    .panel {
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      background: white; padding: 12px 14px; border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      max-width: 280px;
+    }
+    .panel h3 { margin: 0 0 8px; font-size: 16px; }
+    .legend { font-size: 13px; line-height: 1.6; display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .legend label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .legend input { transform: translateY(1px); }
+    .footer-note {
+      position: absolute; bottom: 8px; right: 10px; z-index: 900;
+      background: rgba(255,255,255,0.9); padding: 6px 10px; border-radius: 10px; font-size: 12px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+
+    /* Generic badge marker styling */
+    .badge {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: grid; place-items: center;
+      color: #fff; font-size: 16px; font-weight: 700;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      border: 2px solid rgba(255,255,255,0.9);
+      line-height: 1;
+    }
+    .badge span { transform: translateY(1px); }
+
+    /* Category colors */
+    .c-yakiniku { background: #e74c3c; }         /* 赤 */
+    .c-yakitori { background: #d35400; }         /* 橙 */
+    .c-kaisen   { background: #2980b9; }         /* 青 */
+    .c-okonomi  { background: #8e44ad; }         /* 紫 */
+    .c-sushi    { background: #16a085; }         /* 緑 */
+    .c-ramen    { background: #c0392b; }         /* 濃赤 */
+    .c-bar      { background: #2c3e50; }         /* 濃紺 */
+
+    .popup a { text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel">
+    <h3>ジャンル表示（アイコン付き）</h3>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="footer-note">※住所をオンラインでジオコーディングして表示（Nominatim / OSM）。</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    // Data: name, categoryKey, categoryLabel, emoji, address, url
+    const places = [
+      // 焼肉
+      {name: "板前焼肉 一笑 西中島", key: "yakiniku", label: "焼肉", emoji: "🍖", address: "大阪府大阪市淀川区西中島5-9-6 新大阪サンアールビル本館1F", url: "https://k726002.gorp.jp/"},
+      {name: "肉處 きっしゃん 西中島総本店", key: "yakiniku", label: "焼肉", emoji: "🍖", address: "大阪府大阪市淀川区西中島3-13-14 タカミビル1階", url: "https://mjybeef.com/sohonten/"},
+      // 焼き鳥・居酒屋
+      {name: "七輪焼鳥 一鳥 西中島店", key: "yakitori", label: "焼き鳥・居酒屋", emoji: "🍢", address: "大阪府大阪市淀川区西中島3-14-9 1F", url: "https://nishinakajima.yakitori-icchou.com/"},
+      {name: "備長炭 焼き鳥 えんのば 西中島店", key: "yakitori", label: "焼き鳥・居酒屋", emoji: "🍢", address: "大阪府大阪市淀川区西中島3-17-10 新大阪第2南ビル 2F", url: "https://s.tabelog.com/osaka/A2701/A270301/27137141/"},
+      {name: "下町居酒屋 ありがたやぁ〜", key: "yakitori", label: "焼き鳥・居酒屋", emoji: "🍶", address: "大阪府大阪市淀川区西中島3-19-19 寿ビル 1階", url: "https://arigatayaa.foodre.jp/"},
+      // 海鮮・立ち飲み
+      {name: "酒スタンド 魚蔵 西中島3丁目店", key: "kaisen", label: "海鮮・立ち飲み", emoji: "🐟", address: "大阪府大阪市淀川区西中島3-17-5 1F", url: "https://kc8d206.gorp.jp/"},
+      {name: "立喰酒場 金獅子 西中島南方店", key: "kaisen", label: "海鮮・立ち飲み", emoji: "🍺", address: "大阪府大阪市淀川区西中島4-2-8 Y.S新大阪ビル 中1階", url: "https://s.tabelog.com/osaka/A2701/A270301/27067834/"},
+      // お好み焼き・鉄板
+      {name: "やきやき鉄板 ぼんくら家 西中島店", key: "okonomi", label: "お好み焼き・鉄板", emoji: "🥞", address: "大阪府大阪市淀川区西中島3-19-7 第一ユヤマビル 1F", url: "https://c770939.gorp.jp/"},
+      {name: "ねぎ焼・お好み焼き 和（かず）", key: "okonomi", label: "お好み焼き・鉄板", emoji: "🥢", address: "大阪府大阪市淀川区西中島3-16-6 1F", url: "https://tabelog.com/osaka/A2701/A270301/27018403/"},
+      // 寿司
+      {name: "鮨・酒・肴 杉玉 西中島南方", key: "sushi", label: "寿司", emoji: "🍣", address: "大阪府大阪市淀川区西中島3-16-6 三好第2ビル1F", url: "https://www.sugidama-sushiizakaya.jp/shop/505/"},
+      {name: "やぐら寿し", key: "sushi", label: "寿司", emoji: "🍣", address: "大阪府大阪市淀川区西中島1-12-18", url: "https://www.yagurasushi.com/"},
+      // ラーメン
+      {name: "人類みな麺類（西中島）", key: "ramen", label: "ラーメン", emoji: "🍜", address: "大阪府大阪市淀川区西中島1-12-15", url: "https://www.jinrui-minamenrui.com/"},
+      {name: "麺匠 はなみち 新大阪店", key: "ramen", label: "ラーメン", emoji: "🍜", address: "大阪府大阪市淀川区西中島4-4-25 フルーレ新大阪 1F", url: "https://menshohanamichi.jp/free/shinosaka"},
+      // バー
+      {name: "Public Bar STINGER", key: "bar", label: "バー", emoji: "🍸", address: "大阪府大阪市淀川区西中島3-17-3 5F", url: "https://stinger2017.jp/"}
+    ];
+
+    // Category -> className mapping (for colors) + legend labels
+    const categoryStyles = {
+      yakiniku: { cls: "c-yakiniku", label: "焼肉", emoji: "🍖" },
+      yakitori: { cls: "c-yakitori", label: "焼き鳥・居酒屋", emoji: "🍢" },
+      kaisen:   { cls: "c-kaisen",   label: "海鮮・立ち飲み", emoji: "🐟" },
+      okonomi:  { cls: "c-okonomi",  label: "お好み焼き・鉄板", emoji: "🥞" },
+      sushi:    { cls: "c-sushi",    label: "寿司", emoji: "🍣" },
+      ramen:    { cls: "c-ramen",    label: "ラーメン", emoji: "🍜" },
+      bar:      { cls: "c-bar",      label: "バー", emoji: "🍸" }
+    };
+
+    const map = L.map('map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors'
+    }).addTo(map);
+
+    // Build legend with checkboxes and icon preview
+    const legendEl = document.getElementById('legend');
+    const categories = [...new Set(places.map(p => p.key))];
+    const layerGroups = {};
+    const bounds = L.latLngBounds();
+
+    function iconFor(key, emoji) {
+      const cls = categoryStyles[key]?.cls || "";
+      return L.divIcon({
+        className: "",
+        html: `<div class="badge ${cls}"><span>${emoji || "📍"}</span></div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -12]
+      });
+    }
+
+    // Geocode via Nominatim
+    async function geocode(addr) {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
+      if (!res.ok) throw new Error('geocode failed');
+      const data = await res.json();
+      if (data && data.length > 0) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      return null;
+    }
+
+    (async () => {
+      // legend items + layers
+      categories.forEach((key) => {
+        layerGroups[key] = L.layerGroup().addTo(map);
+        const { cls, label, emoji } = categoryStyles[key];
+        const id = `chk-${key}`;
+        const iconHTML = `<span class="badge ${cls}" style="width:20px;height:20px;font-size:12px;border-width:1.5px;"><span>${emoji}</span></span>`;
+        const row = document.createElement('label');
+        row.innerHTML = `${iconHTML}<input type="checkbox" id="${id}" checked style="margin-left:4px;"> ${label}`;
+        legendEl.appendChild(row);
+
+        // checkbox handler
+        setTimeout(() => {
+          const chk = document.getElementById(id);
+          chk.addEventListener('change', (e) => {
+            if (e.target.checked) layerGroups[key].addTo(map);
+            else map.removeLayer(layerGroups[key]);
+          });
+        }, 0);
+      });
+
+      // plot markers
+      for (const p of places) {
+        try {
+          const latlon = await geocode(p.address);
+          if (!latlon) continue;
+          const marker = L.marker(latlon, { icon: iconFor(p.key, p.emoji), title: p.name });
+          const gmUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}`;
+          marker.bindPopup(`<div class="popup"><strong>${p.name}</strong><br>
+            <span>${p.address}</span><br>
+            <a href="${p.url}" target="_blank" rel="noopener">公式ページ</a> ｜
+            <a href="${gmUrl}" target="_blank" rel="noopener">Googleマップ</a></div>`);
+          marker.addTo(layerGroups[p.key]);
+          bounds.extend(latlon);
+        } catch (e) {
+          console.warn("Geocode failed:", p.name, e);
+        }
+      }
+
+      if (bounds.isValid()) map.fitBounds(bounds.pad(0.15));
+      else map.setView([34.733, 135.501], 15);
+    })();
+  </script>
+</body>
+</html>
